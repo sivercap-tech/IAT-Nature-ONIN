@@ -118,6 +118,9 @@ const IATTest = ({ session, onComplete }: { session: UserSession, onComplete: ()
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  
+  // State for speeder detection
+  const [isSpeeder, setIsSpeeder] = useState(false);
 
   // Debounce Ref
   const lastInputTime = useRef(0);
@@ -157,11 +160,20 @@ const IATTest = ({ session, onComplete }: { session: UserSession, onComplete: ()
   }, [showGeneralIntro, currentBlockIndex, isInstruction, currentStimulus, startTime, mistake, trialCount, finished, isSaving, blocks]);
 
   const finishTest = useCallback(async (finalResults: any[]) => {
+    // 1. Speeder Check Logic
+    // Criteria: If more than 10% of trials are faster than 300ms
+    const fastThreshold = 300; 
+    const fastTrialsCount = finalResults.filter(r => r.reactionTime < fastThreshold).length;
+    const totalTrials = finalResults.length;
+    const isUserTooFast = totalTrials > 0 && (fastTrialsCount / totalTrials) > 0.10;
+    
+    setIsSpeeder(isUserTooFast);
     setFinished(true);
     setIsSaving(true);
     
     const response = await saveResults(session, {
       group: session.group,
+      isSpeeder: isUserTooFast,
       data: finalResults
     });
     
@@ -318,7 +330,9 @@ const IATTest = ({ session, onComplete }: { session: UserSession, onComplete: ()
   if (finished) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-slate-900 text-white p-8 text-center">
-        <h1 className="text-4xl font-bold mb-4 text-emerald-400">Тест завершен!</h1>
+        <h1 className="text-4xl font-bold mb-4 text-emerald-400">
+          {isSpeeder ? "Тест завершен (слишком быстро)" : "Тест завершен!"}
+        </h1>
         
         {isSaving ? (
           <div className="flex flex-col items-center">
@@ -332,37 +346,62 @@ const IATTest = ({ session, onComplete }: { session: UserSession, onComplete: ()
             <p className="text-sm text-slate-400">Пожалуйста, сообщите администратору или проверьте настройки Supabase URL.</p>
           </div>
         ) : (
-          <p className="text-lg mb-8 text-slate-300">Данные успешно сохранены. Опрос закончен! Спасибо Вам большое! Знаем, это было не очень просто, но Вы очень сильно помогли науке! </p>
+          <div className="max-w-xl mx-auto">
+             {isSpeeder ? (
+                <p className="text-lg mb-8 text-red-300">
+                  Вы проходили тест слишком быстро, не вчитываясь в задания. 
+                  К сожалению, мы не можем засчитать этот результат как достоверный.
+                </p>
+             ) : (
+                <p className="text-lg mb-8 text-slate-300">
+                  Данные успешно сохранены. Опрос закончен! Спасибо Вам большое! 
+                  Знаем, это было не очень просто, но Вы очень сильно помогли науке!
+                </p>
+             )}
+          </div>
         )}
 
         <div className="flex gap-4 mt-4">
-          <button 
-            onClick={() => window.location.href = `https://h.opinion.team/urlaction/sessionfinished?status=91&token={QueryID}`}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold text-lg transition-colors"
-          >
-            Завершить опрос
-          </button>
+          {isSpeeder ? (
+            // КНОПКА ДЛЯ СПИДЕРОВ (Статус 94)
+            <button 
+              onClick={() => window.location.href = `https://h.opinion.team/urlaction/sessionfinished?status=94&token=${session.userId}`}
+              className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-lg font-bold text-lg transition-colors"
+            >
+              Завершить
+            </button>
+          ) : (
+             // ОБЫЧНАЯ КНОПКА (Статус 91)
+            <button 
+              onClick={() => window.location.href = `https://h.opinion.team/urlaction/sessionfinished?status=91&token=${session.userId}`}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold text-lg transition-colors"
+            >
+              Завершить опрос
+            </button>
+          )}
           
-          <button 
-            onClick={handleShare}
-            className={`px-8 py-3 rounded-lg font-bold text-lg transition-colors flex items-center gap-2 ${
-              isCopied 
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
-                : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
-            }`}
-          >
-            {isCopied ? (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Скопировано!
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                Поделиться
-              </>
-            )}
-          </button>
+          {!isSpeeder && (
+            <button 
+              onClick={handleShare}
+              className={`px-8 py-3 rounded-lg font-bold text-lg transition-colors flex items-center gap-2 ${
+                isCopied 
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
+                  : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+              }`}
+            >
+              {isCopied ? (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  Скопировано!
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                  Поделиться
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     );
